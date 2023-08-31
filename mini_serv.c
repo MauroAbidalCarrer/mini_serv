@@ -10,7 +10,8 @@
 
 # define FATAL_ERROR_MSG "Fatal error\n"
 # define WRONG_NB_ARG_MSG "Wrong number of arguments\n"
-# define MSG_BUFFER_SIZE 120000
+# define MSG_BUFFER_SIZE 1200
+# define SEND_BUFFER_SIZE MSG_BUFFER_SIZE + 13
 
 int socket_fd_max = 0;
 int nex_client_id = 0;
@@ -25,7 +26,7 @@ fd_set write_socket_set;
 fd_set read_socket_set;
 
 // + strlen("client 1024: ")
-char send_buffer[MSG_BUFFER_SIZE + 13];
+char send_buffer[SEND_BUFFER_SIZE];
 
 void error_exit(char *error_msg)
 {
@@ -42,8 +43,7 @@ void broadcast_message(int emitter_socket)
 {
     for (int socket_fd = 0; socket_fd <= socket_fd_max; socket_fd++)
         if (socket_fd != emitter_socket && FD_ISSET(socket_fd, &write_socket_set) && emitter_socket != listen_socket && client_ids[emitter_socket] != -1)
-            if (write(socket_fd, send_buffer, strlen(send_buffer)) == -1)
-                error_exit(FATAL_ERROR_MSG);
+            write(socket_fd, send_buffer, strlen(send_buffer));
 }
 
 int main(int ac, char **av)
@@ -59,7 +59,7 @@ int main(int ac, char **av)
 	servaddr.sin_port = htons(atoi(av[1]));
 	servaddr.sin_addr.s_addr = htonl(2130706433);
     listen_socket = socket(AF_INET, SOCK_STREAM, 0);
-    int dump;
+    int dump = 1;
     if (listen_socket < 0
         || setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, &dump, sizeof(int)) == -1
         || bind(listen_socket, (struct sockaddr *)&servaddr, sizeof(servaddr)) == -1
@@ -88,25 +88,25 @@ printf("Entering loop, socket_fd_max = %d\n", socket_fd_max);
 // printf("socket_fd = %d \n", socket_fd);
             if (FD_ISSET(socket_fd, &read_socket_set))
             {
-printf("socket %d is set\n", socket_fd);
+// printf("socket %d is set\n", socket_fd);
                 if (socket_fd == listen_socket)
                 {//accept new client
-printf("new connection\n");
+// printf("new connection\n");
                     int new_connexion = accept(socket_fd, (struct sockaddr *)&servaddr, &len);
-printf("new connection = %d\n", new_connexion);
                     if (new_connexion == -1)
                         continue ;//try to continue even if there was an error.
                     socket_fd_max = new_connexion > socket_fd_max ? new_connexion : socket_fd_max;
                     client_ids[new_connexion] = nex_client_id++;
+printf("new connection, id: %d, socket fd: %d\n", client_ids[new_connexion], new_connexion);
                     FD_SET(new_connexion, &every_socket_set);
                     sprintf(send_buffer, "server: client %d just arrived\n", client_ids[new_connexion]);
                     broadcast_message(new_connexion);
-printf("breaking\n");
+// printf("breaking\n");
                     break ;//Restart select loop to send messages to new client.
                 }
                 else
                 {//read and broadcast msg
-printf("read\n");
+// printf("read\n");
                     char read_msg_buffer[MSG_BUFFER_SIZE];
                     ssize_t nb_bytes_read = read(socket_fd, read_msg_buffer, MSG_BUFFER_SIZE - 1);
                     if (nb_bytes_read <= 0)
@@ -132,10 +132,13 @@ printf("discconnection %d\n", client_ids[socket_fd]);
                                 line_buffer[j] = 0;
                                 sprintf(send_buffer, "client %d: %s\n", client_ids[socket_fd], line_buffer);
                                 broadcast_message(socket_fd);
-                                j = 0;
+                                j = -1;//set to -1 as it will get incremented at the end of the iteration of the loop.
+                                // printf("msg buffer after line:\n%s\n", read_msg_buffer + i);
+                                // bzero(line_buffer, sizeof(char) * MSG_BUFFER_SIZE);
+                                // bzero(send_buffer, sizeof(char) * SEND_BUFFER_SIZE);
                             }
                         }
-                        break;
+                        // break;
                     }
                 }
             }
