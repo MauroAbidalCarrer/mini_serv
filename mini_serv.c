@@ -38,10 +38,10 @@ void error_exit(char *error_msg)
     exit(1);
 }
 
-void broadcast_message(int emitter)
+void broadcast_message(int emitter_socket)
 {
-    for (int socket_fd = 0; socket_fd < socket_fd_max; socket_fd++)
-        if (socket_fd != emitter && FD_ISSET(socket_fd, &write_socket_set) && emitter != listen_socket && client_ids[emitter] != -1)
+    for (int socket_fd = 0; socket_fd <= socket_fd_max; socket_fd++)
+        if (socket_fd != emitter_socket && FD_ISSET(socket_fd, &write_socket_set) && emitter_socket != listen_socket && client_ids[emitter_socket] != -1)
             if (write(socket_fd, send_buffer, strlen(send_buffer)) == -1)
                 error_exit(FATAL_ERROR_MSG);
 }
@@ -59,9 +59,11 @@ int main(int ac, char **av)
 	servaddr.sin_port = htons(atoi(av[1]));
 	servaddr.sin_addr.s_addr = htonl(2130706433);
     listen_socket = socket(AF_INET, SOCK_STREAM, 0);
+    int dump;
     if (listen_socket < 0
-        || bind(listen_socket, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0
-        || listen(listen_socket, 10) < 0)
+        || setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, &dump, sizeof(int)) == -1
+        || bind(listen_socket, (struct sockaddr *)&servaddr, sizeof(servaddr)) == -1
+        || listen(listen_socket, 10) == -1)
         error_exit(FATAL_ERROR_MSG);
 
     FD_ZERO(&every_socket_set);
@@ -75,15 +77,15 @@ printf("Entering loop, socket_fd_max = %d\n", socket_fd_max);
     {
         write_socket_set = every_socket_set;
         read_socket_set = every_socket_set;
-        if (select(socket_fd_max + 1, &read_socket_set, &write_socket_set, NULL, NULL) == -1)
+        if (select(socket_fd_max + 1, &read_socket_set, &write_socket_set, NULL, NULL) < 0)
         {
-printf("select continue \n");
+// printf("select continue \n");
             continue;//try to continue even if there was an error.
         }
-printf("select for loop \n");
+// printf("select for loop \n");
         for (int socket_fd = 0; socket_fd <= socket_fd_max; socket_fd++)
         {
-printf("socket_fd = %d \n", socket_fd);
+// printf("socket_fd = %d \n", socket_fd);
             if (FD_ISSET(socket_fd, &read_socket_set))
             {
 printf("socket %d is set\n", socket_fd);
@@ -119,15 +121,15 @@ printf("discconnection %d\n", client_ids[socket_fd]);
                     }
                     else
                     {//handle client message
-printf("message %d\n", client_ids[socket_fd]);
+// printf("message, id: %d\n", client_ids[socket_fd]);
                         read_msg_buffer[nb_bytes_read] = 0;
                         char line_buffer[MSG_BUFFER_SIZE];
                         for (size_t i = 0, j = 0; i < strlen(read_msg_buffer); i++, j++)
                         {
                             line_buffer[j] = read_msg_buffer[i];
-                            if (read_msg_buffer[i] == '\n' || read_msg_buffer[i + 1] == 0)
+                            if (read_msg_buffer[i] == '\n' || read_msg_buffer[i] == 0)
                             {
-                                line_buffer[j + 1] = 0;
+                                line_buffer[j] = 0;
                                 sprintf(send_buffer, "client %d: %s\n", client_ids[socket_fd], line_buffer);
                                 broadcast_message(socket_fd);
                                 j = 0;
