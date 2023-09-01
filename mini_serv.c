@@ -11,6 +11,7 @@
 # define FATAL_ERROR_MSG "Fatal error\n"
 # define WRONG_NB_ARG_MSG "Wrong number of arguments\n"
 # define MSG_BUFFER_SIZE 1200
+// SEND_BUFFER_SIZE = MSG_BUFFER_SIZE + strlen("client 1024: ")
 # define SEND_BUFFER_SIZE MSG_BUFFER_SIZE + 13
 
 int socket_fd_max = 0;
@@ -25,7 +26,6 @@ fd_set every_socket_set;
 fd_set write_socket_set;
 fd_set read_socket_set;
 
-// + strlen("client 1024: ")
 char send_buffer[SEND_BUFFER_SIZE];
 
 void error_exit(char *error_msg)
@@ -65,53 +65,40 @@ int main(int ac, char **av)
         || bind(listen_socket, (struct sockaddr *)&servaddr, sizeof(servaddr)) == -1
         || listen(listen_socket, 10) == -1)
         error_exit(FATAL_ERROR_MSG);
-
     FD_ZERO(&every_socket_set);
     FD_SET(listen_socket, &every_socket_set);
     socket_fd_max = listen_socket;
     memset(client_ids, -1, FD_SETSIZE * sizeof(int));
 
-printf("Entering loop, socket_fd_max = %d\n", socket_fd_max);
     //main loop
     while (42)
     {
         write_socket_set = every_socket_set;
         read_socket_set = every_socket_set;
         if (select(socket_fd_max + 1, &read_socket_set, &write_socket_set, NULL, NULL) < 0)
-        {
-// printf("select continue \n");
             continue;//try to continue even if there was an error.
-        }
-// printf("select for loop \n");
         for (int socket_fd = 0; socket_fd <= socket_fd_max; socket_fd++)
         {
-// printf("socket_fd = %d \n", socket_fd);
             if (FD_ISSET(socket_fd, &read_socket_set))
             {
-// printf("socket %d is set\n", socket_fd);
                 if (socket_fd == listen_socket)
                 {//accept new client
-// printf("new connection\n");
                     int new_connexion = accept(socket_fd, (struct sockaddr *)&servaddr, &len);
                     if (new_connexion == -1)
                         continue ;//try to continue even if there was an error.
                     socket_fd_max = new_connexion > socket_fd_max ? new_connexion : socket_fd_max;
                     client_ids[new_connexion] = nex_client_id++;
-printf("new connection, id: %d, socket fd: %d\n", client_ids[new_connexion], new_connexion);
                     FD_SET(new_connexion, &every_socket_set);
                     sprintf(send_buffer, "server: client %d just arrived\n", client_ids[new_connexion]);
                     broadcast_message(new_connexion);
-// printf("breaking\n");
                     break ;//Restart select loop to send messages to new client.
                 }
                 else
                 {//read and broadcast msg
-// printf("read\n");
                     char read_msg_buffer[MSG_BUFFER_SIZE];
                     ssize_t nb_bytes_read = read(socket_fd, read_msg_buffer, MSG_BUFFER_SIZE - 1);
                     if (nb_bytes_read <= 0)
                     {//handle client disconnection
-printf("discconnection %d\n", client_ids[socket_fd]);
                         sprintf(send_buffer, "server: client %d just left\n", client_ids[socket_fd]);
                         broadcast_message(socket_fd);
                         FD_CLR(socket_fd, &every_socket_set);
@@ -121,7 +108,6 @@ printf("discconnection %d\n", client_ids[socket_fd]);
                     }
                     else
                     {//handle client message
-// printf("message, id: %d\n", client_ids[socket_fd]);
                         read_msg_buffer[nb_bytes_read] = 0;
                         char line_buffer[MSG_BUFFER_SIZE];
                         for (size_t i = 0, j = 0; i < strlen(read_msg_buffer); i++, j++)
@@ -133,12 +119,8 @@ printf("discconnection %d\n", client_ids[socket_fd]);
                                 sprintf(send_buffer, "client %d: %s\n", client_ids[socket_fd], line_buffer);
                                 broadcast_message(socket_fd);
                                 j = -1;//set to -1 as it will get incremented at the end of the iteration of the loop.
-                                // printf("msg buffer after line:\n%s\n", read_msg_buffer + i);
-                                // bzero(line_buffer, sizeof(char) * MSG_BUFFER_SIZE);
-                                // bzero(send_buffer, sizeof(char) * SEND_BUFFER_SIZE);
                             }
                         }
-                        // break;
                     }
                 }
             }
